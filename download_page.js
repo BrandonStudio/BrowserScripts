@@ -3,10 +3,26 @@
     // 克隆当前页面DOM，避免修改当前页面
     const originalDoc = document.cloneNode(true);
 
+    /**
+     * @param {string} url
+     * @returns {Response}
+     */
+    async function fetchWithFallback(url) {
+        /** @type {Response} */
+        let response;
+        try {
+            response = await fetch(url, { mode: 'cors' });
+        } catch (error) {
+            console.warn('Failed to fetch with cors, try without cors', error);
+            response = await fetch(url, { mode: 'no-cors' });
+        }
+        return response
+    }
+
     // 函数：将图片/资源转为base64
     async function resourceToBase64(url) {
         try {
-            const response = await fetch(url, { mode: 'cors' });
+            const response = fetchWithFallback(url);
             const blob = await response.blob();
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -99,7 +115,7 @@
         const linkPromises = Array.from(doc.querySelectorAll('link[rel="stylesheet"]')).map(async link => {
             if (link.href && !link.href.startsWith('data:')) {
                 try {
-                    let cssText = await (await fetch(link.href)).text();
+                    let cssText = await (await fetchWithFallback(link.href)).text();
 
                     // 处理CSS中的所有URL引用
                     cssText = await processCssUrls(cssText, link.href);
@@ -119,7 +135,7 @@
         const scriptPromises = Array.from(doc.querySelectorAll('script[src]')).map(async script => {
             if (!script.src.startsWith('data:')) {
                 try {
-                    const jsText = await (await fetch(script.src)).text();
+                    const jsText = await (await fetchWithFallback(script.src)).text();
                     const newScript = doc.createElement('script');
                     newScript.textContent = jsText;
                     if (script.parentNode) {
