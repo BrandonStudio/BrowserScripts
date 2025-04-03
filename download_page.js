@@ -43,7 +43,7 @@
         doc.querySelectorAll('[href]').forEach(el => {
             try {
                 const hrefValue = el.getAttribute('href');
-                if (hrefValue && hrefValue.startsWith('#') {
+                if (hrefValue && hrefValue.startsWith('#')) {
                     return;
                 }
                 el.href = new URL(hrefValue, document.baseURI).href;
