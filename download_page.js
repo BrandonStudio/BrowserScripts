@@ -2,28 +2,11 @@
 (function() {
     // 克隆当前页面DOM，避免修改当前页面
     const originalDoc = document.cloneNode(true);
-    
-    // 函数：将图片转为base64
-    async function imageToBase64(imgUrl) {
-        try {
-            const response = await fetch(imgUrl, { mode: 'cors' });
-            const blob = await response.blob();
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-            });
-        } catch (error) {
-            console.error('Failed to convert image to base64:', error);
-            return imgUrl; // 转换失败时返回原始URL
-        }
-    }
 
-    // 函数：将CSS/JS文件转为base64
-    async function fileToBase64(fileUrl, fileType) {
+    // 函数：将图片/资源转为base64
+    async function resourceToBase64(url) {
         try {
-            const response = await fetch(fileUrl, { mode: 'cors' });
+            const response = await fetch(url, { mode: 'cors' });
             const blob = await response.blob();
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
@@ -32,17 +15,19 @@
                 reader.readAsDataURL(blob);
             });
         } catch (error) {
-            console.error(`Failed to convert ${fileType} to base64:`, error);
-            return fileUrl; // 转换失败时返回原始URL
+            console.error('Failed to convert resource to base64:', error);
+            return url; // 转换失败时返回原始URL
         }
     }
 
     // 将所有URL转为绝对URL（在克隆的文档上操作）
     async function makeUrlsAbsolute(doc) {
-        // 转换所有href属性为绝对URL
+        // 转换所有href属性为绝对URL，但保留纯页内书签链接的原始形式
         doc.querySelectorAll('[href]').forEach(el => {
             try {
                 const hrefValue = el.getAttribute('href');
+
+                // 如果是纯页内书签链接（以#开头），保留原始形式
                 if (hrefValue && hrefValue.startsWith('#')) {
                     return;
                 }
@@ -55,11 +40,46 @@
         // 转换所有src属性为绝对URL
         doc.querySelectorAll('[src]').forEach(el => {
             try {
-                el.src = new URL(el.getAttribute('src'), document.baseURI).href;
+                const srcValue = el.getAttribute('src');
+                if (srcValue) {
+                    el.src = new URL(srcValue, document.baseURI).href;
+                }
             } catch (e) {
                 console.error('Error converting src to absolute URL:', e);
             }
         });
+    }
+
+    // 处理CSS中的所有URL引用
+    async function processCssUrls(cssText, baseUrl) {
+        // 匹配所有CSS中的url()
+        const urlRegex = /url\(['"]?([^'"()]+)['"]?\)/g;
+        let match;
+        let processedCss = cssText;
+        const promises = [];
+
+        // 收集所有需要处理的URL
+        while ((match = urlRegex.exec(cssText)) !== null) {
+            const fullMatch = match[0];
+            const url = match[1];
+
+            // 如果不是data:URL
+            if (!url.startsWith('data:')) {
+                try {
+                    const absoluteUrl = new URL(url, baseUrl).href;
+                    promises.push(
+                        resourceToBase64(absoluteUrl).then(base64Url => {
+                            processedCss = processedCss.replace(fullMatch, `url(${base64Url})`);
+                        })
+                    );
+                } catch (e) {
+                    console.error('Error processing CSS URL:', e);
+                }
+            }
+        }
+
+        await Promise.all(promises);
+        return processedCss;
     }
 
     // 处理所有外部资源转为base64（在克隆的文档上操作）
@@ -68,7 +88,7 @@
         const imgPromises = Array.from(doc.querySelectorAll('img[src]')).map(async img => {
             if (!img.src.startsWith('data:')) {
                 try {
-                    img.src = await imageToBase64(img.src);
+                    img.src = await resourceToBase64(img.src);
                 } catch (e) {
                     console.error('Error processing image:', e);
                 }
@@ -79,7 +99,11 @@
         const linkPromises = Array.from(doc.querySelectorAll('link[rel="stylesheet"]')).map(async link => {
             if (link.href && !link.href.startsWith('data:')) {
                 try {
-                    const cssText = await (await fetch(link.href)).text();
+                    let cssText = await (await fetch(link.href)).text();
+
+                    // 处理CSS中的所有URL引用
+                    cssText = await processCssUrls(cssText, link.href);
+
                     const newStyle = doc.createElement('style');
                     newStyle.textContent = cssText;
                     if (link.parentNode) {
@@ -107,26 +131,57 @@
             }
         });
 
-        // 处理样式中的背景图片
-        const elementsWithStyle = Array.from(doc.querySelectorAll('[style*="background"]'));
+        // 处理所有内联样式中的URL
+        const elementsWithStyle = Array.from(doc.querySelectorAll('[style*="url("]'));
         const stylePromises = elementsWithStyle.map(async element => {
             const style = element.getAttribute('style');
-            if (style && style.includes('url(')) {
-                const urlMatch = style.match(/url\(['"]?(.*?)['"]?\)/);
-                if (urlMatch && urlMatch[1] && !urlMatch[1].startsWith('data:')) {
-                    try {
-                        const imgUrl = new URL(urlMatch[1], document.baseURI).href;
-                        const base64Url = await imageToBase64(imgUrl);
-                        element.setAttribute('style', style.replace(urlMatch[0], `url(${base64Url})`));
-                    } catch (e) {
-                        console.error('Error processing background image:', e);
+            if (style) {
+                const urlRegex = /url\(['"]?([^'"()]+)['"]?\)/g;
+                let match;
+                let newStyle = style;
+                const urlPromises = [];
+
+                while ((match = urlRegex.exec(style)) !== null) {
+                    const fullMatch = match[0];
+                    const url = match[1];
+                    
+                    if (!url.startsWith('data:')) {
+                        try {
+                            const absoluteUrl = new URL(url, document.baseURI).href;
+                            urlPromises.push(
+                                resourceToBase64(absoluteUrl).then(base64Url => {
+                                    newStyle = newStyle.replace(fullMatch, `url(${base64Url})`);
+                                })
+                            );
+                        } catch (e) {
+                            console.error('Error processing inline style URL:', e);
+                        }
                     }
                 }
+
+                await Promise.all(urlPromises);
+                element.setAttribute('style', newStyle);
+            }
+        });
+
+        // 处理内联样式表
+        const styleElements = Array.from(doc.querySelectorAll('style'));
+        const inlineStylePromises = styleElements.map(async styleEl => {
+            try {
+                styleEl.textContent = await processCssUrls(styleEl.textContent, document.baseURI);
+            } catch (e) {
+                console.error('Error processing inline stylesheet:', e);
             }
         });
 
         // 等待所有转换完成
-        await Promise.all([...imgPromises, ...linkPromises, ...scriptPromises, ...stylePromises]);
+        await Promise.all([
+            ...imgPromises, 
+            ...linkPromises, 
+            ...scriptPromises, 
+            ...stylePromises,
+            ...inlineStylePromises
+        ]);
     }
 
     // 主函数
@@ -147,7 +202,7 @@
                 z-index: 9999;
                 font-family: Arial, sans-serif;
             `;
-            
+
             dialog.innerHTML = `
                 <h3 style="margin-top: 0;">选择操作</h3>
                 <p>请选择如何查看转换后的页面：</p>
@@ -156,53 +211,53 @@
                 <button id="cancel" style="margin: 5px; padding: 8px 15px;">取消</button>
                 <div id="status" style="margin-top: 15px;"></div>
             `;
-            
+
             document.body.appendChild(dialog);
             
             // 设置状态更新函数
             const updateStatus = (msg) => {
                 document.getElementById('status').textContent = msg;
             };
-            
+
             // 处理取消按钮
             document.getElementById('cancel').addEventListener('click', () => {
                 document.body.removeChild(dialog);
             });
-            
+
             // 处理新标签页按钮
             document.getElementById('openNewTab').addEventListener('click', async () => {
                 updateStatus('正在处理页面资源，请稍候...');
-                
+
                 const clonedDoc = originalDoc.cloneNode(true);
                 await makeUrlsAbsolute(clonedDoc);
                 await processExternalResources(clonedDoc);
-                
+
                 // 创建带有处理后内容的新文档
                 const html = clonedDoc.documentElement.outerHTML;
                 const blob = new Blob([html], { type: 'text/html' });
                 const url = URL.createObjectURL(blob);
-                
+
                 // 在新标签页中打开
                 window.open(url, '_blank');
-                
+
                 // 清理
                 setTimeout(() => URL.revokeObjectURL(url), 60000);
                 updateStatus('页面已在新标签页中打开');
             });
-            
+
             // 处理下载按钮
             document.getElementById('downloadHtml').addEventListener('click', async () => {
                 updateStatus('正在处理页面资源，请稍候...');
-                
+
                 const clonedDoc = originalDoc.cloneNode(true);
                 await makeUrlsAbsolute(clonedDoc);
                 await processExternalResources(clonedDoc);
-                
+
                 // 创建带有处理后内容的新文档
                 const html = clonedDoc.documentElement.outerHTML;
                 const blob = new Blob([html], { type: 'text/html' });
                 const url = URL.createObjectURL(blob);
-                
+
                 // 创建下载链接
                 const downloadLink = document.createElement('a');
                 downloadLink.href = url;
@@ -211,7 +266,7 @@
                 document.body.appendChild(downloadLink);
                 downloadLink.click();
                 document.body.removeChild(downloadLink);
-                
+
                 // 清理
                 setTimeout(() => URL.revokeObjectURL(url), 60000);
                 updateStatus('下载已开始');
