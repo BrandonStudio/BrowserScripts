@@ -1,11 +1,26 @@
+// ==UserScript==
+// @name         Dump Page
+// @namespace    http://tampermonkey.net/
+// @version      0.3
+// @description  Dump HTML Page
+// @homepage     https://github.com/BrandonStudio/BrowserScripts/
+// @author       Brandon Studio
+// @downloadurl  https://github.com/BrandonStudio/BrowserScripts/raw/refs/heads/main/dump_page.user.js
+// @updateurl    https://github.com/BrandonStudio/BrowserScripts/raw/refs/heads/main/dump_page.user.js
+// @match        <all_urls>
+// @grant        GM_registerMenuCommand
+// ==/UserScript==
+
+/// <reference path="./types.d.ts" />
+
 // 这个脚本将外部资源转换为base64并使所有链接转为绝对路径，不改变当前页面
 (function() {
+    'use strict';
     // 克隆当前页面DOM，避免修改当前页面
     const originalDoc = document.cloneNode(true);
 
     /**
      * @param {string} url
-     * @returns {Response}
      */
     async function fetchWithFallback(url) {
         /** @type {Response} */
@@ -37,6 +52,10 @@
     }
 
     // 将所有URL转为绝对URL（在克隆的文档上操作）
+    /**
+     * 
+     * @param {Element} doc 
+     */
     async function makeUrlsAbsolute(doc) {
         // 转换所有href属性为绝对URL，但保留纯页内书签链接的原始形式
         doc.querySelectorAll('[href]').forEach(el => {
@@ -67,6 +86,11 @@
     }
 
     // 处理CSS中的所有URL引用
+    /**
+     * 
+     * @param {string} cssText 
+     * @param {string} baseUrl 
+     */
     async function processCssUrls(cssText, baseUrl) {
         // 匹配所有CSS中的url()
         const urlRegex = /url\(['"]?([^'"()]+)['"]?\)/g;
@@ -99,6 +123,10 @@
     }
 
     // 处理所有外部资源转为base64（在克隆的文档上操作）
+    /**
+     * 
+     * @param {Element} doc 
+     */
     async function processExternalResources(doc) {
         // 处理图片
         const imgPromises = Array.from(doc.querySelectorAll('img[src]')).map(async img => {
@@ -201,7 +229,7 @@
     }
 
     // 主函数
-    async function createSelfContainedPage() {
+    function createSelfContainedPage() {
         try {
             // 创建用户选择界面
             const dialog = document.createElement('div');
@@ -294,5 +322,9 @@
     }
 
     // 执行脚本
-    createSelfContainedPage();
+    if (GM_registerMenuCommand) {
+        GM_registerMenuCommand('Dump', createSelfContainedPage);
+    } else {
+        createSelfContainedPage();
+    }
 })();
