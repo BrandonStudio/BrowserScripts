@@ -5,9 +5,10 @@
 // @description  Dump HTML Page
 // @homepage     https://github.com/BrandonStudio/BrowserScripts/
 // @author       Brandon Studio
-// @downloadurl  https://github.com/BrandonStudio/BrowserScripts/raw/refs/heads/main/dump_page.user.js
-// @updateurl    https://github.com/BrandonStudio/BrowserScripts/raw/refs/heads/main/dump_page.user.js
+// @downloadURL  https://github.com/BrandonStudio/BrowserScripts/raw/refs/heads/main/dump_page.user.js
+// @updateURL    https://github.com/BrandonStudio/BrowserScripts/raw/refs/heads/main/dump_page.user.js
 // @match        <all_urls>
+// @include      *
 // @grant        GM_registerMenuCommand
 // ==/UserScript==
 
