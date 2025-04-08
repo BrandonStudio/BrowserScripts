@@ -22,7 +22,7 @@
     // 函数：将图片/资源转为base64
     async function resourceToBase64(url) {
         try {
-            const response = fetchWithFallback(url);
+            const response = await fetchWithFallback(url);
             const blob = await response.blob();
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
