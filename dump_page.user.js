@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Dump Page
 // @namespace    http://tampermonkey.net/
-// @version      0.3
+// @version      0.4
 // @description  Dump HTML Page
 // @homepage     https://github.com/BrandonStudio/BrowserScripts/
 // @author       Brandon Studio
