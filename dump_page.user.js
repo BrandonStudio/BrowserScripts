@@ -12,7 +12,7 @@
 // @grant        GM_registerMenuCommand
 // ==/UserScript==
 
-/// <reference path="./types.d.ts" />
+/// <reference path="./types/tampermonkey.d.ts" />
 
 // 这个脚本将外部资源转换为base64并使所有链接转为绝对路径，不改变当前页面
 (function() {
