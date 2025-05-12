@@ -14,6 +14,13 @@
 // ==/UserScript==
 
 /// <reference path="./types/tampermonkey.d.ts" />
+/// <reference path="./types/github-copilot-sync.d.ts" />
+
+/**
+ * @typedef {import('./types/github-copilot-sync.d.ts').StoredData} StoredData
+ * @typedef {import('./types/github-copilot-sync.d.ts').WebDAVConfig} WebDAVConfig
+ * @typedef {import('./types/tampermonkey.d.ts').XMLHttpResponse} XMLHttpResponse
+ */
 
 (function() {
     'use strict';
@@ -83,7 +90,7 @@
 
     // WebDAV配置UI
     const WebDAVConfigUI = {
-        async showConfigDialog() {
+        showConfigDialog() {
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
 
@@ -107,7 +114,7 @@
             document.body.appendChild(modal);
 
             // 填充已有配置
-            const config = await AUTH.getWebDAVConfig();
+            const config = AUTH.getWebDAVConfig();
             if (config) {
                 modal.querySelector('#webdav-url').value = config.url || '';
                 modal.querySelector('#webdav-user').value = config.username || '';
@@ -139,7 +146,7 @@
                 const password = modal.querySelector('#webdav-password').value;
 
                 try {
-                    await AUTH.saveWebDAVConfig(url, username, password);
+                    AUTH.saveWebDAVConfig(url, username, password);
                     alert('配置已保存');
                     document.body.removeChild(overlay);
                     document.body.removeChild(modal);
@@ -152,7 +159,8 @@
 
     // 认证相关
     const AUTH = {
-        async getGitHubToken() {
+        /** @return {string} */
+        getGitHubToken() {
             const token = localStorage.getItem('COPILOT_AUTH_TOKEN');
             if (!token) {
                 throw new Error('No GitHub Copilot auth token found');
@@ -160,12 +168,19 @@
             return JSON.parse(token).value;
         },
 
-        async getWebDAVConfig() {
-            const config = await GM_getValue('webdav_config');
-            return config ? JSON.parse(config) : null;
+        /** @return {WebDAVConfig | null} */
+        getWebDAVConfig() {
+            const config = GM_getValue('webdav_config');
+            return config || null;
         },
 
-        async saveWebDAVConfig(url, username, password) {
+        /**
+         * 
+         * @param {string} url 
+         * @param {string} username 
+         * @param {string} password 
+         */
+        saveWebDAVConfig(url, username, password) {
             // 简单的配置验证
             if (!url || !username || !password) {
                 throw new Error('所有字段都必须填写');
@@ -174,6 +189,7 @@
                 url += '/';
             }
 
+            /** @type {WebDAVConfig} */
             const config = {
                 url,
                 username,
@@ -181,13 +197,21 @@
                 authHeader: 'Basic ' + btoa(`${username}:${password}`)
             };
 
-            await GM_setValue('webdav_config', JSON.stringify(config));
+            GM_setValue('webdav_config', config);
         }
     };
 
     // WebDAV操作
     const WebDAV = {
-        async testConnection(url, username, password) {
+        /**
+         * 测试WebDAV连接
+         * @param {string} url
+         * @param {string} username
+         * @param {string} password
+         * @return {Promise<true>}
+         * @throws {Error}
+         */
+        testConnection(url, username, password) {
             if (!url.endsWith('/')) url += '/';
             const authHeader = 'Basic ' + btoa(`${username}:${password}`);
 
@@ -211,8 +235,15 @@
             });
         },
 
-        async request(path, method, data = null) {
-            const config = await AUTH.getWebDAVConfig();
+        /**
+         * 
+         * @param {string} path 
+         * @param {string} method 
+         * @param {*} data 
+         * @returns {Promise<XMLHttpResponse>}
+         */
+        request(path, method, data = null) {
+            const config = AUTH.getWebDAVConfig();
             if (!config) {
                 throw new Error('WebDAV未配置');
             }
@@ -241,6 +272,10 @@
             });
         },
 
+        /**
+         * @param {string} path
+         * @returns {Promise<StoredData | null>}
+         */
         async readJson(path) {
             try {
                 const response = await this.request(path, 'GET');
@@ -253,6 +288,10 @@
             }
         },
 
+        /**
+         * @param {string} path
+         * @param {StoredData} data
+         */
         async writeJson(path, data) {
             await this.request(path, 'PUT', data);
         }
@@ -260,6 +299,7 @@
 
     // 同步管理器
     const SyncManager = {
+        /** @param {string} threadId */
         async syncThread(threadId) {
             try {
                 // 获取消息
@@ -273,7 +313,7 @@
                     messageIds: messages.messages.map(m => m.id).sort()
                 };
 
-                // 检查是否需要更新
+                // 无数据，直接存储
                 if (!storedData) {
                     // 新会话
                     await WebDAV.writeJson(`threads/${threadId}.json`, {
@@ -301,15 +341,16 @@
                 const { threads } = await API.getAllThreads();
                 console.log(`Found ${threads.length} threads`);
 
-                for (const thread of threads) {
+                const syncPromises = threads.map(async (thread) => {
                     try {
                         await this.syncThread(thread.id);
                         console.debug(`${thread.id} synced.`);
                     } catch (error) {
                         console.error(`Sync failed on ${thread.id}, skip... `, error);
                     }
-                }
+                });
 
+                await Promise.all(syncPromises);
                 console.log('Sync completed');
             } catch (error) {
                 console.error('Sync failed:', error);
@@ -320,8 +361,11 @@
 
     // API请求封装
     const API = {
+        /**
+         * @param {string} endpoint
+         */
         async request(endpoint) {
-            const token = await AUTH.getGitHubToken();
+            const token = AUTH.getGitHubToken();
             return new Promise((resolve, reject) => {
                 GM_xmlhttpRequest({
                     method: 'GET',
@@ -342,23 +386,34 @@
             });
         },
 
+        /** @returns {Promise<import('./types/github-copilot-sync.d.ts').ThreadResponse>} */
         async getAllThreads() {
             return this.request('/threads');
         },
 
+        /**
+         * @param {string} threadId
+         * @returns {Promise<import('./types/github-copilot-sync.d.ts').MessagesResponse>}
+         */
         async getThreadMessages(threadId) {
             return this.request(`/threads/${threadId}/messages`);
         }
     };
 
     // 初始化
-    async function initialize() {
+    function initialize() {
         registerMenuCommands();
-        await UI.addPageButtons();
+        UI.addPageButtons();
     }
 
     // UI操作
     const UI = {
+        /**
+         * @param {HTMLElement} container
+         * @param {string} text
+         * @param {GlobalEventHandlers["onclick"]} onClick
+         * @param {string} className
+         */
         addSyncButton(container, text, onClick, className = '') {
             const button = document.createElement('button');
             button.className = `copilot-sync-btn ${className}`;
@@ -386,7 +441,7 @@
             return button;
         },
 
-        async addPageButtons() {
+        addPageButtons() {
             // 在 Copilot 页面添加按钮
             if (location.pathname === '/copilot') {
                 const headerActions = document.querySelector('.Subhead-actions');
