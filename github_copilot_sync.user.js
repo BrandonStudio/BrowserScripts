@@ -299,7 +299,12 @@
                 console.log(`Found ${threads.length} threads`);
 
                 for (const thread of threads) {
-                    await this.syncThread(thread.id);
+                    try {
+                        await this.syncThread(thread.id);
+                        console.debug(`${thread.id} synced.`);
+                    } catch (error) {
+                        console.error(`Sync failed on ${thread.id}, skip... `, error);
+                    }
                 }
 
                 console.log('Sync completed');
