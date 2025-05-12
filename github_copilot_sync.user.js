@@ -216,15 +216,18 @@
             if (!config) {
                 throw new Error('WebDAV未配置');
             }
+            const headers = {
+                'Authorization': config.authHeader,
+            };
+            if (data) {
+                headers['Content-Type'] = 'application/json';
+            }
 
             return new Promise((resolve, reject) => {
                 GM_xmlhttpRequest({
                     method,
                     url: config.url + path,
-                    headers: {
-                        'Authorization': config.authHeader,
-                        'Content-Type': 'application/json',
-                    },
+                    headers,
                     data: data ? JSON.stringify(data) : undefined,
                     onload: response => {
                         if (response.status >= 200 && response.status < 300) {
