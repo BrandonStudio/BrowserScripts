@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         GitHub Copilot Chat Sync
 // @namespace    https://github.com/BrandonStudio/BrowserScripts/GitHub-Copilot-Sync
-// @version      0.1
+// @version      0.2
 // @description  同步 GitHub Copilot 聊天记录到WebDAV
 // @author       BrandonStudio
 // @match        https://github.com/copilot/*
+// @include      https://github.com/copilot/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -85,7 +86,7 @@
         async showConfigDialog() {
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
-            
+
             const modal = document.createElement('div');
             modal.className = 'webdav-config-modal';
             modal.innerHTML = `
@@ -156,7 +157,7 @@
             if (!token) {
                 throw new Error('No GitHub Copilot auth token found');
             }
-            return token;
+            return JSON.parse(token).value;
         },
 
         async getWebDAVConfig() {
@@ -229,7 +230,7 @@
                         if (response.status >= 200 && response.status < 300) {
                             resolve(response);
                         } else {
-                            reject(new Error(`WebDAV request failed: ${response.status}`));
+                            reject(response);
                         }
                     },
                     onerror: reject
@@ -260,7 +261,7 @@
             try {
                 // 获取消息
                 const messages = await API.getThreadMessages(threadId);
-                
+
                 // 获取已存储的数据
                 const storedData = await WebDAV.readJson(`threads/${threadId}.json`);
                 const currentVersion = {
@@ -280,7 +281,7 @@
                 }
 
                 const lastVersion = storedData.versions[storedData.versions.length - 1];
-                if (!lastVersion || 
+                if (!lastVersion ||
                     currentVersion.messageIds.join(',') !== lastVersion.messageIds.join(',')) {
                     // 需要更新
                     storedData.versions.push(currentVersion);
@@ -288,7 +289,7 @@
                 }
             } catch (error) {
                 console.error(`Failed to sync thread ${threadId}:`, error);
-                throw error;  // 向上传递错误以便UI处理
+                throw error; // 向上传递错误以便UI处理
             }
         },
 
@@ -296,7 +297,7 @@
             try {
                 const { threads } = await API.getAllThreads();
                 console.log(`Found ${threads.length} threads`);
-                
+
                 for (const thread of threads) {
                     await this.syncThread(thread.id);
                 }
@@ -319,7 +320,7 @@
                     url: `${CONFIG.API_BASE}${endpoint}`,
                     headers: {
                         'Accept': 'application/json',
-                        'Authorization': `Bearer ${token}`
+                        'Authorization': `GitHub-Bearer ${token}`
                     },
                     onload: function(response) {
                         if (response.status >= 200 && response.status < 300) {
