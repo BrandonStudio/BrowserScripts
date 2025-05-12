@@ -4,23 +4,153 @@
 // @version      0.1
 // @description  同步 GitHub Copilot 聊天记录到WebDAV
 // @author       BrandonStudio
-// @match        https://github.com/copilot/c/*
+// @match        https://github.com/copilot/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
+// @grant        GM_registerMenuCommand
+// @grant        GM_addStyle
 // ==/UserScript==
+
+/// <reference path="./types/tampermonkey.d.ts" />
 
 (function() {
     'use strict';
 
+    // 添加样式
+    GM_addStyle(`
+        .copilot-sync-btn {
+            margin-left: 8px;
+            padding: 4px 8px;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            background-color: #f6f8fa;
+            color: #24292f;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .copilot-sync-btn:hover {
+            background-color: #eaeef2;
+        }
+        .webdav-config-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 10000;
+            width: 400px;
+        }
+        .webdav-config-modal input {
+            width: 100%;
+            margin: 8px 0;
+            padding: 6px;
+            border: 1px solid #d0d7de;
+            border-radius: 4px;
+        }
+        .webdav-config-modal button {
+            margin: 8px 8px 0 0;
+            padding: 6px 12px;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            background-color: #f6f8fa;
+            cursor: pointer;
+        }
+        .webdav-config-modal button.primary {
+            background-color: #2da44e;
+            color: white;
+            border-color: #2da44e;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 9999;
+        }
+    `);
+
+    // 配置模块
     const CONFIG = {
-        WEBDAV_URL: 'https://your-webdav-server.com/copilot-chats/',
-        SYNC_INTERVAL: 5 * 60 * 1000,  // 5分钟
         API_BASE: 'https://api.individual.githubcopilot.com/github/chat',
     };
 
+    // WebDAV配置UI
+    const WebDAVConfigUI = {
+        async showConfigDialog() {
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            
+            const modal = document.createElement('div');
+            modal.className = 'webdav-config-modal';
+            modal.innerHTML = `
+                <h3 style="margin-top:0">WebDAV 配置</h3>
+                <div>
+                    <input type="text" id="webdav-url" placeholder="WebDAV URL (例如: https://example.com/dav/)" />
+                    <input type="text" id="webdav-user" placeholder="用户名" />
+                    <input type="password" id="webdav-password" placeholder="密码" />
+                    <div style="margin-top:16px">
+                        <button class="primary" id="webdav-save">保存</button>
+                        <button id="webdav-test">测试连接</button>
+                        <button id="webdav-cancel">取消</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+            document.body.appendChild(modal);
+
+            // 填充已有配置
+            const config = await AUTH.getWebDAVConfig();
+            if (config) {
+                modal.querySelector('#webdav-url').value = config.url || '';
+                modal.querySelector('#webdav-user').value = config.username || '';
+                // 出于安全考虑，不回填密码
+            }
+
+            // 事件处理
+            modal.querySelector('#webdav-cancel').onclick = () => {
+                document.body.removeChild(overlay);
+                document.body.removeChild(modal);
+            };
+
+            modal.querySelector('#webdav-test').onclick = async () => {
+                const url = modal.querySelector('#webdav-url').value;
+                const username = modal.querySelector('#webdav-user').value;
+                const password = modal.querySelector('#webdav-password').value;
+
+                try {
+                    await WebDAV.testConnection(url, username, password);
+                    alert('连接成功！');
+                } catch (e) {
+                    alert('连接失败：' + e.message);
+                }
+            };
+
+            modal.querySelector('#webdav-save').onclick = async () => {
+                const url = modal.querySelector('#webdav-url').value;
+                const username = modal.querySelector('#webdav-user').value;
+                const password = modal.querySelector('#webdav-password').value;
+
+                try {
+                    await AUTH.saveWebDAVConfig(url, username, password);
+                    alert('配置已保存');
+                    document.body.removeChild(overlay);
+                    document.body.removeChild(modal);
+                } catch (e) {
+                    alert('保存失败：' + e.message);
+                }
+            };
+        }
+    };
+
+    // 认证相关
     const AUTH = {
-        // 从页面的localStorage中获取GitHub的认证token
         async getGitHubToken() {
             const token = localStorage.getItem('COPILOT_AUTH_TOKEN');
             if (!token) {
@@ -29,43 +159,69 @@
             return token;
         },
 
-        // WebDAV认证相关
-        async getWebDAVAuth() {
-            let auth = await GM_getValue('webdav_auth');
-            if (!auth) {
-                if (!await this.setupWebDAVAuth()) {
-                    throw new Error('WebDAV auth not configured');
-                }
-                auth = await GM_getValue('webdav_auth');
-            }
-            return auth;
+        async getWebDAVConfig() {
+            const config = await GM_getValue('webdav_config');
+            return config ? JSON.parse(config) : null;
         },
 
-        // 设置WebDAV认证信息
-        async setupWebDAVAuth() {
-            const username = prompt("输入WebDAV用户名：");
-            const password = prompt("输入WebDAV密码：");
-            if (!username || !password) {
-                return false;
+        async saveWebDAVConfig(url, username, password) {
+            // 简单的配置验证
+            if (!url || !username || !password) {
+                throw new Error('所有字段都必须填写');
             }
-            
-            // 使用简单的加密存储密码（这只是基本的混淆，不是真正的加密）
-            const encodedAuth = btoa(`${username}:${password}`);
-            await GM_setValue('webdav_auth', encodedAuth);
-            return true;
+            if (!url.endsWith('/')) {
+                url += '/';
+            }
+
+            const config = {
+                url,
+                username,
+                password,
+                authHeader: 'Basic ' + btoa(`${username}:${password}`)
+            };
+
+            await GM_setValue('webdav_config', JSON.stringify(config));
         }
     };
 
-    // WebDAV操作封装
+    // WebDAV操作
     const WebDAV = {
+        async testConnection(url, username, password) {
+            if (!url.endsWith('/')) url += '/';
+            const authHeader = 'Basic ' + btoa(`${username}:${password}`);
+
+            return new Promise((resolve, reject) => {
+                GM_xmlhttpRequest({
+                    method: 'PROPFIND',
+                    url: url,
+                    headers: {
+                        'Authorization': authHeader,
+                        'Depth': '0'
+                    },
+                    onload: response => {
+                        if (response.status === 207) {
+                            resolve(true);
+                        } else {
+                            reject(new Error(`服务器返回状态码: ${response.status}`));
+                        }
+                    },
+                    onerror: () => reject(new Error('连接失败'))
+                });
+            });
+        },
+
         async request(path, method, data = null) {
-            const auth = await AUTH.getWebDAVAuth();
+            const config = await AUTH.getWebDAVConfig();
+            if (!config) {
+                throw new Error('WebDAV未配置');
+            }
+
             return new Promise((resolve, reject) => {
                 GM_xmlhttpRequest({
                     method,
-                    url: CONFIG.WEBDAV_URL + path,
+                    url: config.url + path,
                     headers: {
-                        'Authorization': `Basic ${auth}`,
+                        'Authorization': config.authHeader,
                         'Content-Type': 'application/json',
                     },
                     data: data ? JSON.stringify(data) : undefined,
@@ -100,16 +256,15 @@
 
     // 同步管理器
     const SyncManager = {
-        async syncThread(thread) {
+        async syncThread(threadId) {
             try {
                 // 获取消息
-                const messages = await API.getThreadMessages(thread.id);
+                const messages = await API.getThreadMessages(threadId);
                 
                 // 获取已存储的数据
-                const storedData = await WebDAV.readJson(`threads/${thread.id}.json`);
+                const storedData = await WebDAV.readJson(`threads/${threadId}.json`);
                 const currentVersion = {
                     syncedAt: new Date().toISOString(),
-                    name: thread.name,
                     messages: messages.messages,
                     messageIds: messages.messages.map(m => m.id).sort()
                 };
@@ -117,8 +272,8 @@
                 // 检查是否需要更新
                 if (!storedData) {
                     // 新会话
-                    await WebDAV.writeJson(`threads/${thread.id}.json`, {
-                        id: thread.id,
+                    await WebDAV.writeJson(`threads/${threadId}.json`, {
+                        id: threadId,
                         versions: [currentVersion]
                     });
                     return;
@@ -129,11 +284,11 @@
                     currentVersion.messageIds.join(',') !== lastVersion.messageIds.join(',')) {
                     // 需要更新
                     storedData.versions.push(currentVersion);
-                    await WebDAV.writeJson(`threads/${thread.id}.json`, storedData);
+                    await WebDAV.writeJson(`threads/${threadId}.json`, storedData);
                 }
             } catch (error) {
-                console.error(`Failed to sync thread ${thread.id}:`, error);
-                // 如果是404错误（GitHub已删除），保留最后同步的数据
+                console.error(`Failed to sync thread ${threadId}:`, error);
+                throw error;  // 向上传递错误以便UI处理
             }
         },
 
@@ -143,12 +298,13 @@
                 console.log(`Found ${threads.length} threads`);
                 
                 for (const thread of threads) {
-                    await this.syncThread(thread);
+                    await this.syncThread(thread.id);
                 }
-                
+
                 console.log('Sync completed');
             } catch (error) {
                 console.error('Sync failed:', error);
+                throw error;
             }
         }
     };
@@ -163,7 +319,7 @@
                     url: `${CONFIG.API_BASE}${endpoint}`,
                     headers: {
                         'Accept': 'application/json',
-                        'Authorization': `Bearer ${token}`,
+                        'Authorization': `Bearer ${token}`
                     },
                     onload: function(response) {
                         if (response.status >= 200 && response.status < 300) {
@@ -188,30 +344,82 @@
 
     // 初始化
     async function initialize() {
-        // 简单的状态指示器
-        const statusDiv = document.createElement('div');
-        statusDiv.style.position = 'fixed';
-        statusDiv.style.bottom = '20px';
-        statusDiv.style.right = '20px';
-        statusDiv.style.padding = '5px';
-        statusDiv.style.background = '#f0f0f0';
-        statusDiv.style.border = '1px solid #ccc';
-        statusDiv.style.zIndex = '9999';
-        document.body.appendChild(statusDiv);
+        registerMenuCommands();
+        await UI.addPageButtons();
+    }
 
-        const sync = async () => {
-            statusDiv.textContent = '同步中...';
+    // UI操作
+    const UI = {
+        addSyncButton(container, text, onClick, className = '') {
+            const button = document.createElement('button');
+            button.className = `copilot-sync-btn ${className}`;
+            button.textContent = text;
+            button.onclick = async () => {
+                button.disabled = true;
+                button.textContent = '同步中...';
+                try {
+                    await onClick();
+                    button.textContent = '同步成功';
+                    setTimeout(() => {
+                        button.textContent = text;
+                        button.disabled = false;
+                    }, 2000);
+                } catch (e) {
+                    button.textContent = '同步失败';
+                    alert(e.message);
+                    setTimeout(() => {
+                        button.textContent = text;
+                        button.disabled = false;
+                    }, 2000);
+                }
+            };
+            container.appendChild(button);
+            return button;
+        },
+
+        async addPageButtons() {
+            // 在 Copilot 页面添加按钮
+            if (location.pathname === '/copilot') {
+                const headerActions = document.querySelector('.Subhead-actions');
+                if (headerActions) {
+                    this.addSyncButton(headerActions, '同步全部会话', () => SyncManager.syncAllThreads());
+                }
+            }
+            // 在具体会话页面添加按钮
+            else if (location.pathname.startsWith('/copilot/c/')) {
+                const threadId = location.pathname.split('/').pop();
+                const headerActions = document.querySelector('.Subhead-actions');
+                if (headerActions) {
+                    this.addSyncButton(headerActions, '同步本会话', () => SyncManager.syncThread(threadId));
+                }
+            }
+        }
+    };
+
+    // 注册菜单命令
+    function registerMenuCommands() {
+        GM_registerMenuCommand('设置WebDAV', () => WebDAVConfigUI.showConfigDialog());
+        GM_registerMenuCommand('同步全部会话', async () => {
             try {
                 await SyncManager.syncAllThreads();
-                statusDiv.textContent = `同步完成 (${new Date().toLocaleTimeString()})`;
+                alert('同步完成');
             } catch (e) {
-                statusDiv.textContent = `同步失败 (${new Date().toLocaleTimeString()})`;
-                console.error(e);
+                alert('同步失败: ' + e.message);
             }
-        };
+        });
 
-        setInterval(sync, CONFIG.SYNC_INTERVAL);
-        sync(); // 首次同步
+        // 只在会话页面启用"同步本会话"菜单
+        if (location.pathname.startsWith('/copilot/c/')) {
+            const threadId = location.pathname.split('/').pop();
+            GM_registerMenuCommand('同步本会话', async () => {
+                try {
+                    await SyncManager.syncThread(threadId);
+                    alert('同步完成');
+                } catch (e) {
+                    alert('同步失败: ' + e.message);
+                }
+            });
+        }
     }
 
     // 页面加载完成时初始化
