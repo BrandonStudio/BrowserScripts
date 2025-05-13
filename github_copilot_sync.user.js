@@ -1,16 +1,19 @@
 // ==UserScript==
 // @name         GitHub Copilot Chat Sync
 // @namespace    https://github.com/BrandonStudio/BrowserScripts/GitHub-Copilot-Sync
-// @version      0.2
-// @description  同步 GitHub Copilot 聊天记录到WebDAV
+// @version      0.3
+// @description  Sync GitHub Copilot Chat history to WebDAV
 // @author       BrandonStudio
+// @updateURL    https://github.com/BrandonStudio/BrowserScripts/raw/refs/heads/main/github_copilot_sync.user.js
+// @downloadURL  https://github.com/BrandonStudio/BrowserScripts/raw/refs/heads/main/github_copilot_sync.user.js
 // @match        https://github.com/copilot/*
-// @include      https://github.com/copilot/*
+// @include      https://github.com/copilot*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
 // @grant        GM_addStyle
+// @connect      api.individual.githubcopilot.com
 // ==/UserScript==
 
 /// <reference path="./types/tampermonkey.d.ts" />
