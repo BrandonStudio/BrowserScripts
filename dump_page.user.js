@@ -7,6 +7,7 @@
 // @author       Brandon Studio
 // @downloadURL  https://github.com/BrandonStudio/BrowserScripts/raw/refs/heads/main/dump_page.user.js
 // @updateURL    https://github.com/BrandonStudio/BrowserScripts/raw/refs/heads/main/dump_page.user.js
+// @supportURL   https://github.com/BrandonStudio/BrowserScripts/
 // @match        <all_urls>
 // @include      *
 // @grant        GM_registerMenuCommand

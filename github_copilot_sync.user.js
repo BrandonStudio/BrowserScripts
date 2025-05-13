@@ -4,8 +4,10 @@
 // @version      0.3
 // @description  Sync GitHub Copilot Chat history to WebDAV
 // @author       BrandonStudio
+// @homepage     https://github.com/BrandonStudio/BrowserScripts/
 // @updateURL    https://github.com/BrandonStudio/BrowserScripts/raw/refs/heads/main/github_copilot_sync.user.js
 // @downloadURL  https://github.com/BrandonStudio/BrowserScripts/raw/refs/heads/main/github_copilot_sync.user.js
+// @supportURL   https://github.com/BrandonStudio/BrowserScripts/
 // @match        https://github.com/copilot/*
 // @include      https://github.com/copilot*
 // @grant        GM_xmlhttpRequest
