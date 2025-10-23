@@ -15,7 +15,6 @@
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
 // @grant        GM_addStyle
-// @connect      api.individual.githubcopilot.com
 // ==/UserScript==
 
 /// <reference path="./types/tampermonkey.d.ts" />
@@ -145,7 +144,7 @@
                 }
             };
 
-            modal.querySelector('#webdav-save').onclick = async () => {
+            modal.querySelector('#webdav-save').onclick = () => {
                 const url = modal.querySelector('#webdav-url').value;
                 const username = modal.querySelector('#webdav-user').value;
                 const password = modal.querySelector('#webdav-password').value;
@@ -371,28 +370,21 @@
          */
         async request(endpoint) {
             const token = AUTH.getGitHubToken();
-            return new Promise((resolve, reject) => {
-                GM_xmlhttpRequest({
-                    method: 'GET',
-                    url: `${CONFIG.API_BASE}${endpoint}`,
-                    headers: {
-                        'Accept': 'application/json',
-                        'Authorization': `GitHub-Bearer ${token}`
-                    },
-                    onload: function(response) {
-                        if (response.status >= 200 && response.status < 300) {
-                            resolve(JSON.parse(response.responseText));
-                        } else {
-                            reject(new Error(`Request failed: ${response.status}`));
-                        }
-                    },
-                    onerror: reject
-                });
-            });
+            const response = await fetch(`${CONFIG.API_BASE}${endpoint}`, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': `GitHub-Bearer ${token}`
+                },
+            })
+            if (response.status >= 200 && response.status < 300) {
+                return await response.json();
+            } else {
+                throw new Error(`Request failed: ${response.status}`);
+            }
         },
 
         /** @returns {Promise<import('./types/github-copilot-sync.d.ts').ThreadResponse>} */
-        async getAllThreads() {
+        getAllThreads() {
             return this.request('/threads');
         },
 
@@ -400,7 +392,7 @@
          * @param {string} threadId
          * @returns {Promise<import('./types/github-copilot-sync.d.ts').MessagesResponse>}
          */
-        async getThreadMessages(threadId) {
+        getThreadMessages(threadId) {
             return this.request(`/threads/${threadId}/messages`);
         }
     };
