@@ -373,7 +373,9 @@
             const response = await fetch(`${CONFIG.API_BASE}${endpoint}`, {
                 headers: {
                     'Accept': 'application/json',
-                    'Authorization': `GitHub-Bearer ${token}`
+                    'Authorization': `GitHub-Bearer ${token}`,
+                    'copilot-integration-id': 'copilot-chat',
+                    'x-github-api-version': '2025-05-01',
                 },
             })
             if (response.status >= 200 && response.status < 300) {
@@ -490,3 +492,4 @@
         window.addEventListener('load', initialize);
     }
 })();
+
