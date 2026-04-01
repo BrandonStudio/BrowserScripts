@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         GitHub Copilot Chat Sync
 // @namespace    https://github.com/BrandonStudio/BrowserScripts/GitHub-Copilot-Sync
-// @version      0.4
+// @version      0.5
 // @description  Sync GitHub Copilot Chat history to WebDAV
 // @author       BrandonStudio
 // @homepage     https://github.com/BrandonStudio/BrowserScripts/
