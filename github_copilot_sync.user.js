@@ -471,18 +471,15 @@
             }
         });
 
-        // 只在会话页面启用"同步本会话"菜单
-        if (location.pathname.startsWith('/copilot/c/')) {
-            const threadId = location.pathname.split('/').pop();
-            GM_registerMenuCommand('同步本会话', async () => {
-                try {
-                    await SyncManager.syncThread(threadId);
-                    alert('同步完成');
-                } catch (e) {
-                    alert('同步失败: ' + e.message);
-                }
-            });
-        }
+        GM_registerMenuCommand('同步本会话', async () => {
+            try {
+                const threadId = location.pathname.split('/').pop();
+                await SyncManager.syncThread(threadId);
+                alert('同步完成');
+            } catch (e) {
+                alert('同步失败: ' + e.message);
+            }
+        });
     }
 
     // 页面加载完成时初始化
